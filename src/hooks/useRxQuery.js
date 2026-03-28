@@ -18,9 +18,24 @@ export function useRxQuery(query, { live = true, isDoc = false } = {}) {
     queryRef.current = query
   }
 
-  // Use a stable string key derived from the query's JSON representation
-  // This prevents infinite re-renders from unstable query object references
-  const queryKey = query ? JSON.stringify(query.toJSON?.() ?? query) : 'null'
+  // Build a stable key from query properties without hitting circular refs.
+  // RxDB queries expose mangoQuery / otherJsonSafe on the RxQuery prototype.
+  let queryKey = 'null'
+  if (query) {
+    try {
+      // RxDB stores the parsed query internally — grab safe properties only
+      const mango = query.mangoQuery || {}
+      queryKey = JSON.stringify({
+        c: query.collection?.name ?? '',
+        s: mango.selector ?? {},
+        so: mango.sort ?? null,
+        l: mango.limit ?? null,
+      })
+    } catch {
+      // Fallback: use string coercion (no circular ref risk)
+      queryKey = String(query)
+    }
+  }
 
   useEffect(() => {
     const currentQuery = queryRef.current
