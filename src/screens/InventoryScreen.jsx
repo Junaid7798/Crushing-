@@ -1,15 +1,18 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useDB } from '../contexts/DBContext.jsx'
 import { useRxQuery } from '../hooks/useRxQuery.js'
 import { useConfig } from '../hooks/useConfig.js'
 import { useToast } from '../components/ui/Toast.jsx'
 import { createRecord, updateRecord, formatMoney, haptic, debounce, now, escapeRegex } from '../helpers.js'
+import { UNIT_CATEGORIES, getCategoryOptions, getUnitsForCategory, detectMaterialDefaults, allowsDecimal, formatQtyWithUnit } from '../config/units.js'
 
 /**
  * InventoryScreen - Premium product & stock management.
  */
 export default function InventoryScreen() {
+  const navigate = useNavigate()
   const { db } = useDB()
   const { currentUser } = useAuth()
   const { isPluginEnabled } = useConfig()
@@ -43,8 +46,20 @@ export default function InventoryScreen() {
     haptic()
     try {
       await createRecord('items', {
-        ...data,
+        name: data.name,
+        item_type: data.item_type,
+        unit: data.unit,
+        unit_category: data.unit_category,
+        selling_unit: data.selling_unit,
+        allow_decimal_qty: data.allow_decimal_qty,
         stock_qty: data.opening_stock,
+        cost_price: data.cost_price,
+        sell_price_retail: data.sell_price_retail,
+        sell_price_wholesale: data.sell_price_wholesale,
+        gst_rate: data.gst_rate,
+        low_stock_alert: data.low_stock_alert,
+        active: data.active,
+        field_1_value: data.field_1_value,
       }, { user_id: currentUser.id })
       setShowWizard(false)
     } catch (err) {
@@ -80,7 +95,12 @@ export default function InventoryScreen() {
           <h1 style={s.title}>Inventory Control</h1>
           <p style={s.subTitle}>{items?.length || 0} Products tracked</p>
         </div>
-        <button style={s.addBtn} onClick={() => { haptic(); setShowWizard(true) }}>⊕ Add New Product</button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button style={s.rateBtn} onClick={() => { haptic(); navigate('/ratecard') }}>
+            💰 Daily Rates
+          </button>
+          <button style={s.addBtn} onClick={() => { haptic(); setShowWizard(true) }}>⊕ Add New Product</button>
+        </div>
       </header>
 
       <div style={s.body}>
@@ -101,9 +121,11 @@ export default function InventoryScreen() {
               <div style={s.stockRow}>
                 <div style={s.stockVal}>
                   <div style={{ ...s.stockValueText, color: item.stock_qty <= (item.low_stock_alert || 0) ? 'var(--red)' : 'var(--text)' }}>
-                    {item.stock_qty}
+                    {formatQtyWithUnit(item.stock_qty, item.selling_unit || item.unit || 'pcs')}
                   </div>
-                  <div style={s.stockUnit}>{item.unit} available</div>
+                  <div style={s.stockUnit}>
+                    {item.unit_category ? UNIT_CATEGORIES[item.unit_category]?.label : 'Stock'} — {item.selling_unit || item.unit || 'pcs'}
+                  </div>
                 </div>
                 <div style={s.cardActions}>
                   <button style={s.miniBtn} onClick={() => { haptic(); setHistoryItem(item) }}>📋 Log</button>
@@ -147,7 +169,7 @@ function AdjustmentModal({ item, onClose, onAdjust }) {
             </select>
           </div>
           <div style={s.previewVal}>
-            Resulting Stock: <b>{item.stock_qty + val} {item.unit}</b>
+            Resulting Stock: <b>{formatQtyWithUnit(item.stock_qty + val, item.selling_unit || item.unit || 'pcs')}</b>
           </div>
         </div>
         <div style={s.modalFooter}>
@@ -206,27 +228,142 @@ function HistoryModal({ item, db, onClose }) {
 }
 
 function ItemModal({ onClose, onSave }) {
-  const [data, setData] = useState({ name: '', field_1_value: '', unit: 'pcs', sell_price_retail: 0, sell_price_wholesale: 0, opening_stock: 0, low_stock_alert: 5, active: true, item_type: 'product' })
+  const [data, setData] = useState({
+    name: '', field_1_value: '', unit: 'pcs', unit_category: '',
+    selling_unit: 'pcs', allow_decimal_qty: true,
+    item_type: 'product',
+    sell_price_retail: 0, sell_price_wholesale: 0,
+    cost_price: 0, gst_rate: 0,
+    opening_stock: 0, low_stock_alert: 5, active: true,
+  })
+
+  const categoryOptions = getCategoryOptions()
+  const unitOptions = data.unit_category ? getUnitsForCategory(data.unit_category) : []
+
+  const handleNameChange = (name) => {
+    setData(p => {
+      const updated = { ...p, name }
+      const detected = detectMaterialDefaults(name)
+      if (detected) {
+        updated.unit_category = detected.category
+        updated.unit = detected.default_unit
+        updated.selling_unit = detected.selling_unit
+        updated.gst_rate = detected.gst_rate
+        updated.allow_decimal_qty = allowsDecimal(detected.default_unit)
+      }
+      return updated
+    })
+  }
+
+  const handleCategoryChange = (category) => {
+    const units = getUnitsForCategory(category)
+    const defaultUnit = units[0]?.id || 'pcs'
+    setData(p => ({
+      ...p,
+      unit_category: category,
+      unit: defaultUnit,
+      selling_unit: defaultUnit,
+      allow_decimal_qty: units[0]?.allowDecimal ?? true,
+    }))
+  }
+
   return (
     <div style={s.overlay} onClick={onClose}>
       <div style={s.modal} onClick={e => e.stopPropagation()}>
         <div style={s.modalHeader}><h2 style={s.modalTitle}>Catalog New Product</h2></div>
         <div style={s.modalBody}>
           <div style={s.mField}>
-            <label style={s.mLabel}>Product Title</label>
-            <input autoFocus style={s.mInput} placeholder="e.g. Premium Cotton Fabric" value={data.name} onChange={e => setData(p => ({ ...p, name: e.target.value }))} />
+            <label style={s.mLabel}>Product Name</label>
+            <input autoFocus style={s.mInput} placeholder="e.g. Cement OPC 53, Crushed Stone 20mm"
+              value={data.name} onChange={e => handleNameChange(e.target.value)} />
+            {data.unit_category && (
+              <div style={s.autoDetect}>
+                Auto-detected: {UNIT_CATEGORIES[data.unit_category]?.icon} {UNIT_CATEGORIES[data.unit_category]?.label}
+              </div>
+            )}
           </div>
           <div style={s.mField}>
             <label style={s.mLabel}>HSN Code</label>
-            <input style={s.mInput} placeholder="8-digit code" value={data.field_1_value} onChange={e => setData(p => ({ ...p, field_1_value: e.target.value }))} />
+            <input style={s.mInput} placeholder="8-digit code" value={data.field_1_value}
+              onChange={e => setData(p => ({ ...p, field_1_value: e.target.value }))} />
           </div>
           <div style={s.row}>
-            <div style={s.mField}><label style={s.mLabel}>Retail Unit Price</label><input type="number" style={s.mInput} value={data.sell_price_retail} onChange={e => setData(p => ({ ...p, sell_price_retail: parseFloat(e.target.value) || 0 }))} /></div>
-            <div style={s.mField}><label style={s.mLabel}>Stock Unit</label><input style={s.mInput} value={data.unit} onChange={e => setData(p => ({ ...p, unit: e.target.value }))} /></div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Unit Category</label>
+              <select style={s.mSelect} value={data.unit_category}
+                onChange={e => handleCategoryChange(e.target.value)}>
+                <option value="">Select category...</option>
+                {categoryOptions.map(c => (
+                  <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Stock Unit</label>
+              <select style={s.mSelect} value={data.unit}
+                onChange={e => {
+                  const unit = unitOptions.find(u => u.id === e.target.value)
+                  setData(p => ({
+                    ...p,
+                    unit: e.target.value,
+                    selling_unit: e.target.value,
+                    allow_decimal_qty: unit?.allowDecimal ?? true,
+                  }))
+                }}>
+                {unitOptions.map(u => (
+                  <option key={u.id} value={u.id}>{u.label} ({u.short})</option>
+                ))}
+                {unitOptions.length === 0 && <option value="pcs">Pieces (pcs)</option>}
+              </select>
+            </div>
           </div>
           <div style={s.row}>
-            <div style={s.mField}><label style={s.mLabel}>Opening Inventory</label><input type="number" style={s.mInput} value={data.opening_stock} onChange={e => setData(p => ({ ...p, opening_stock: parseInt(e.target.value) || 0 }))} /></div>
-            <div style={s.mField}><label style={s.mLabel}>Low Stock Alert At</label><input type="number" style={s.mInput} value={data.low_stock_alert} onChange={e => setData(p => ({ ...p, low_stock_alert: parseInt(e.target.value) || 0 }))} /></div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Retail Price (per {data.selling_unit || data.unit})</label>
+              <input type="number" style={s.mInput} value={data.sell_price_retail}
+                onChange={e => setData(p => ({ ...p, sell_price_retail: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Wholesale Price</label>
+              <input type="number" style={s.mInput} value={data.sell_price_wholesale}
+                onChange={e => setData(p => ({ ...p, sell_price_wholesale: parseFloat(e.target.value) || 0 }))} />
+            </div>
+          </div>
+          <div style={s.row}>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Cost Price</label>
+              <input type="number" style={s.mInput} value={data.cost_price}
+                onChange={e => setData(p => ({ ...p, cost_price: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>GST Rate (%)</label>
+              <select style={s.mSelect} value={data.gst_rate}
+                onChange={e => setData(p => ({ ...p, gst_rate: parseFloat(e.target.value) || 0 }))}>
+                <option value="0">0% (Exempt)</option>
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18">18%</option>
+                <option value="28">28%</option>
+              </select>
+            </div>
+          </div>
+          <div style={s.row}>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Opening Stock ({data.unit})</label>
+              <input type={data.allow_decimal_qty ? 'number' : 'number'} step={data.allow_decimal_qty ? '0.01' : '1'}
+                style={s.mInput} value={data.opening_stock}
+                onChange={e => setData(p => ({ ...p, opening_stock: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div style={s.mField}>
+              <label style={s.mLabel}>Low Stock Alert</label>
+              <input type="number" style={s.mInput} value={data.low_stock_alert}
+                onChange={e => setData(p => ({ ...p, low_stock_alert: parseInt(e.target.value) || 0 }))} />
+            </div>
+          </div>
+          <div style={s.checkRow}>
+            <input type="checkbox" id="allowDecimal" checked={data.allow_decimal_qty}
+              onChange={e => setData(p => ({ ...p, allow_decimal_qty: e.target.checked }))} />
+            <label htmlFor="allowDecimal" style={s.checkLabel}>Allow decimal quantities (e.g. 2.5 kg)</label>
           </div>
         </div>
         <div style={s.modalFooter}>
@@ -244,6 +381,7 @@ const s = {
   title: { fontSize: '22px', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' },
   subTitle: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 },
   addBtn: { padding: '14px 28px', background: 'var(--grad-amber)', color: '#000', borderRadius: '16px', fontWeight: 800, border: 'none', boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s' },
+  rateBtn: { padding: '14px 20px', background: 'var(--glass-highlight)', border: '1px solid var(--glass-border)', color: 'var(--text)', borderRadius: '16px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap' },
   body: { flex: 1, padding: '32px', overflowY: 'auto' },
   filterRow: { marginBottom: '32px' },
   searchWrap: { background: 'var(--glass)', borderRadius: '20px', padding: '18px 24px', border: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: 'var(--glass-shadow)' },
@@ -274,4 +412,7 @@ const s = {
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
   hint: { fontSize: '11px', color: 'var(--text3)', marginTop: '8px' },
   previewVal: { marginTop: '20px', padding: '16px', background: 'var(--amber-dim)', borderRadius: '14px', color: 'var(--amber)', fontSize: '14px', textAlign: 'center' },
+  autoDetect: { fontSize: '11px', color: 'var(--teal)', fontWeight: 700, marginTop: '6px' },
+  checkRow: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' },
+  checkLabel: { fontSize: '13px', color: 'var(--text2)', fontWeight: 600, cursor: 'pointer' },
 }

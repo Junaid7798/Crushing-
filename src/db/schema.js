@@ -196,7 +196,7 @@ export const rawMaterialsSchema = {
 
 // 6. ITEMS
 export const itemsSchema = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -204,6 +204,9 @@ export const itemsSchema = {
     name:        SHORT_STRING,
     item_type:   { type: 'string', maxLength: 20 },
     unit:        { type: 'string', maxLength: 30 },
+    unit_category: { type: 'string', maxLength: 20 },
+    selling_unit:  { type: 'string', maxLength: 30 },
+    allow_decimal_qty: BOOLEAN_FIELD,
     stock_qty:   NUMBER_FIELD,
     cost_price:  NUMBER_FIELD,
     sell_price_retail:     NUMBER_FIELD,
@@ -321,7 +324,7 @@ export const transactionsSchema = {
 
 // 10. TRANSACTION LINES
 export const transactionLinesSchema = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -337,6 +340,8 @@ export const transactionLinesSchema = {
     gst_amount:     NUMBER_FIELD,
     line_total:     NUMBER_FIELD,
     cost_price:     NUMBER_FIELD,
+    rate_override:  BOOLEAN_FIELD,
+    rate_date:      NULLABLE_STRING,
     business_id:    UUID_FIELD,
   },
   required: ['id', 'transaction_id', 'item_id', 'business_id'],
@@ -588,4 +593,29 @@ export const stockAdjustmentsSchema = {
   },
   required: ['id', 'item_id', 'qty_change', 'reason', 'business_id'],
   indexes: ['business_id', 'item_id', 'date'],
+}
+
+// 20. RATE CARDS — Daily pricing per item
+export const rateCardsSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id:              UUID_FIELD,
+    item_id:         UUID_FIELD,
+    date:            DATE_STRING,
+    retail_rate:     NUMBER_FIELD,
+    wholesale_rate:  NUMBER_FIELD,
+    cost_rate:       NUMBER_FIELD,
+    source:          { type: 'string', maxLength: 20 },
+    notes:           MEDIUM_STRING,
+    business_id:     UUID_FIELD,
+    created_at:      TIMESTAMP_STRING,
+    created_by:      NULLABLE_UUID,
+  },
+  required: ['id', 'item_id', 'date', 'business_id'],
+  indexes: [
+    'business_id', 'item_id', 'date',
+    ['item_id', 'date'], ['business_id', 'date'],
+  ],
 }

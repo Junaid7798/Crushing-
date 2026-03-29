@@ -6,6 +6,7 @@ import DashboardScreen from './screens/DashboardScreen.jsx'
 import TransactionScreen from './screens/TransactionScreen.jsx'
 import PDFPreviewScreen from './screens/PDFPreviewScreen.jsx'
 import InventoryScreen from './screens/InventoryScreen.jsx'
+import RateCardScreen from './screens/RateCardScreen.jsx'
 import PartiesScreen from './screens/PartiesScreen.jsx'
 import ReportsScreen from './screens/ReportsScreen.jsx'
 import SettingsScreen from './screens/SettingsScreen.jsx'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/transaction" element={<TransactionScreen />} />
         <Route path="/transaction/:id" element={<PDFPreviewScreen />} />
         <Route path="/inventory" element={<InventoryScreen />} />
+        <Route path="/ratecard" element={<RateCardScreen />} />
         <Route path="/parties" element={<PartiesScreen />} />
         <Route path="/reports" element={<ReportsScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />

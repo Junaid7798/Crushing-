@@ -25,6 +25,7 @@ import {
   conflictLogSchema,
   auditLogSchema,
   stockAdjustmentsSchema,
+  rateCardsSchema,
 } from './schema.js'
 
 // Guard against double plugin registration in HMR environments
@@ -67,6 +68,7 @@ export async function initDB() {
     conflict_log:      { schema: conflictLogSchema },
     audit_log:         { schema: auditLogSchema },
     stock_adjustments: { schema: stockAdjustmentsSchema },
+    rate_cards:        { schema: rateCardsSchema },
   })
 
   return _db

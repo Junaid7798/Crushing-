@@ -63,7 +63,7 @@ export const ThermalPDF = ({ transaction, party, items, config }) => {
         {items.map((item, idx) => (
           <View key={idx} style={styles.tableRow} wrap={false}>
             <Text style={styles.colDesc}>{item.item_name}</Text>
-            <Text style={styles.colQty}>{item.qty}</Text>
+            <Text style={styles.colQty}>{item.qty} {item.unit || ''}</Text>
             <Text style={styles.colTotal}>{formatMoney(item.line_total)}</Text>
           </View>
         ))}

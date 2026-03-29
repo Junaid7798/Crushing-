@@ -169,7 +169,7 @@ export const InvoicePDF = ({ transaction, party, items, config }) => {
             <View key={index} style={styles.tableRow} wrap={false}>
               <Text style={styles.colNo}>{index + 1}</Text>
               <Text style={styles.colDesc}>{item.item_name}</Text>
-              <Text style={styles.colQty}>{item.qty}</Text>
+              <Text style={styles.colQty}>{item.qty} {item.unit || ''}</Text>
               <Text style={styles.colRate}>{formatMoney(item.unit_price)}</Text>
               <Text style={styles.colTotal}>{formatMoney(item.line_total)}</Text>
             </View>

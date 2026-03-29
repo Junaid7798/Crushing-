@@ -5,6 +5,7 @@ import { useConfig } from '../hooks/useConfig.js'
 import { useDB } from '../contexts/DBContext.jsx'
 import { useRxQuery } from '../hooks/useRxQuery.js'
 import { uuid, now, createRecord, updateRecord, formatMoney, haptic, debounce, escapeRegex } from '../helpers.js'
+import { formatQtyWithUnit, allowsDecimal, getUnitInfo } from '../config/units.js'
 
 /**
  * TransactionScreen - Premium multi-step transaction engine.
@@ -78,9 +79,29 @@ export default function TransactionScreen() {
     { live: true }
   )
 
+  // Fetch today's rate cards for dynamic pricing
+  const { result: todayRates } = useRxQuery(
+    db?.rate_cards?.find({
+      selector: {
+        business_id: currentUser?.business_id,
+        date: formData.date
+      }
+    }),
+    { live: true }
+  )
+
+  const rateMap = useMemo(() => {
+    const map = {}
+    if (todayRates) todayRates.forEach(r => { map[r.item_id] = r })
+    return map
+  }, [todayRates])
+
   // ── CALCULATIONS ─────────────────────────────────
   const txSubtotal = useMemo(() => formData.items.reduce((s, i) => s + i.total, 0), [formData.items])
-  const txGstAmount = useMemo(() => formData.items.reduce((s, i) => s + (i.total * ((i.tax_percent || 0) / 100)), 0), [formData.items])
+  const txGstAmount = useMemo(() => {
+    if (formData.doc_type === 'Cash Memo') return 0
+    return formData.items.reduce((s, i) => s + (i.total * ((i.tax_percent || 0) / 100)), 0)
+  }, [formData.items, formData.doc_type])
   const txTotal = useMemo(() => txSubtotal + txGstAmount, [txSubtotal, txGstAmount])
   const balanceDue = useMemo(() => txTotal - formData.amount_paid, [txTotal, formData.amount_paid])
 
@@ -99,13 +120,28 @@ export default function TransactionScreen() {
 
   const addItem = (item) => {
     haptic()
-    const rate = formData.sale_channel === 'retail' ? item.sell_price_retail : item.sell_price_wholesale
+    const channel = formData.sale_channel
+    // Look up today's rate from rate_cards first, fallback to item defaults
+    const todayRate = rateMap[item.id]
+    let rate
+    if (todayRate) {
+      rate = channel === 'retail' ? todayRate.retail_rate : todayRate.wholesale_rate
+    } else {
+      rate = channel === 'retail' ? item.sell_price_retail : item.sell_price_wholesale
+    }
+    const unit = item.selling_unit || item.unit || 'pcs'
+    const isDecimal = item.allow_decimal_qty ?? allowsDecimal(unit)
     setFormData(p => ({
       ...p,
       items: [...p.items, { 
         id: uuid(), item_id: item.id, name: item.name, 
-        qty: 1, rate: rate || 0, tax_percent: item.gst_rate || 0, 
-        total: (rate || 0) * 1 
+        qty: isDecimal ? 1 : 1, rate: rate || 0, 
+        tax_percent: formData.doc_type === 'Tax Invoice' ? (item.gst_rate || 0) : 0,
+        total: (rate || 0) * 1,
+        unit,
+        allow_decimal: isDecimal,
+        rate_overridden: false,
+        rate_date: todayRate ? formData.date : null,
       }]
     }))
     setItemSearch('')
@@ -179,8 +215,11 @@ export default function TransactionScreen() {
           unit: item.unit || 'pcs',
           unit_price: item.rate,
           line_total: item.total,
-          gst_rate: item.tax_percent || 0,
+          gst_rate: formData.doc_type === 'Cash Memo' ? 0 : (item.tax_percent || 0),
+          gst_amount: formData.doc_type === 'Cash Memo' ? 0 : (item.total * ((item.tax_percent || 0) / 100)),
           cost_price: currentCost,
+          rate_override: item.rate_overridden || false,
+          rate_date: item.rate_date || null,
         }, { user_id: userId })
         createdIds.lines.push(lineRecord.id)
         
@@ -332,8 +371,24 @@ const Step1 = ({ formData, setFormData, locations }) => (
         <div style={s.toggle}>
           {['Tax Invoice', 'Cash Memo'].map(d => (
             <button key={d} style={{ ...s.toggleBtn, ...(formData.doc_type === d ? s.toggleActive : {}) }} 
-              onClick={() => { haptic(); setFormData(p => ({ ...p, doc_type: d })) }}>{d}</button>
+              onClick={() => { 
+                haptic()
+                setFormData(p => {
+                  // When switching to Cash Memo, zero out GST rates; restore them for Tax Invoice
+                  const updatedItems = p.items.map(item => ({
+                    ...item,
+                    tax_percent: d === 'Cash Memo' ? 0 : (item._saved_tax_percent || item.tax_percent || 0),
+                    _saved_tax_percent: d === 'Cash Memo' ? (item._saved_tax_percent || item.tax_percent || 0) : item.tax_percent,
+                  }))
+                  return { ...p, doc_type: d, items: updatedItems }
+                })
+              }}>{d}</button>
           ))}
+        </div>
+        <div style={s.gstHint}>
+          {formData.doc_type === 'Cash Memo' 
+            ? 'No GST will be calculated on this invoice' 
+            : 'GST will be calculated per item rate'}
         </div>
       </div>
     )}
@@ -386,7 +441,15 @@ const Step3 = ({ itemSearch, setItemSearch, inventory, formData, setFormData, ad
       <div style={s.searchPop}>
         {inventory?.map(i => (
           <button key={i.id} style={s.itemResult} onClick={() => addItem(i)}>
-            {i.name} — {formatMoney(formData.sale_channel === 'retail' ? i.sell_price_retail : i.sell_price_wholesale)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <span>{i.name}</span>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <span style={s.itemUnit}>{i.selling_unit || i.unit || 'pcs'}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontWeight: 800, color: 'var(--amber)' }}>
+                  {formatMoney(formData.sale_channel === 'retail' ? i.sell_price_retail : i.sell_price_wholesale)}
+                </span>
+              </div>
+            </div>
           </button>
         ))}
       </div>
@@ -396,16 +459,45 @@ const Step3 = ({ itemSearch, setItemSearch, inventory, formData, setFormData, ad
         <div key={i.id} style={s.itemRow}>
           <div style={{ flex: 1 }}>
              <div style={s.pName}>{i.name}</div>
-             <div style={s.pPhone}>{formatMoney(i.rate)} / unit</div>
+             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+               <span style={s.pPhone}>{formatMoney(i.rate)} / {i.unit || 'unit'}</span>
+               {i.rate_overridden && <span style={s.overrideBadge}>Override</span>}
+               {i.rate_date && !i.rate_overridden && <span style={s.rateDateBadge}>Rate: {i.rate_date}</span>}
+             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <input type="number" style={s.qtyInput} value={i.qty} onChange={e => {
-              const list = formData.items.map(item => ({ ...item })); 
-              list[idx].qty = parseFloat(e.target.value) || 0; 
-              list[idx].total = list[idx].qty * list[idx].rate;
-              setFormData(p => ({ ...p, items: list }))
-            }} />
-            <div style={s.iTotal}>{formatMoney(i.total)}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <input 
+                type="number" 
+                step={i.allow_decimal ? '0.01' : '1'}
+                style={s.qtyInput} 
+                value={i.qty} 
+                onChange={e => {
+                  const val = i.allow_decimal ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 0)
+                  const list = formData.items.map(item => ({ ...item })); 
+                  list[idx].qty = val; 
+                  list[idx].total = list[idx].qty * list[idx].rate;
+                  setFormData(p => ({ ...p, items: list }))
+                }} 
+              />
+              <span style={s.qtyUnit}>{i.unit || 'pcs'}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+              <input
+                type="number"
+                style={{ ...s.rateOverride, color: i.rate_overridden ? 'var(--amber)' : 'var(--text3)' }}
+                value={i.rate}
+                onChange={e => {
+                  const list = formData.items.map(item => ({ ...item }))
+                  list[idx].rate = parseFloat(e.target.value) || 0
+                  list[idx].total = list[idx].qty * list[idx].rate
+                  list[idx].rate_overridden = true
+                  setFormData(p => ({ ...p, items: list }))
+                }}
+                title="Edit rate to override"
+              />
+              <div style={s.iTotal}>{formatMoney(i.total)}</div>
+            </div>
             <button style={s.delBtn} onClick={() => {
               haptic();
               setFormData(p => ({ ...p, items: p.items.filter(it => it.id !== i.id) }))
@@ -510,8 +602,15 @@ const s = {
   itemList: { marginTop: '32px', display: 'flex', flexDirection: 'column', gap: '16px' },
   itemRow: { padding: '20px', background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   qtyInput: { width: '80px', padding: '10px', borderRadius: '12px', background: 'var(--surface3)', border: '1px solid var(--glass-border)', color: 'var(--text)', textAlign: 'center', fontSize: '15px', fontWeight: 800, fontFamily: 'var(--mono)' },
+  qtyUnit: { fontSize: '9px', color: 'var(--text3)', fontWeight: 700, marginTop: '2px', textTransform: 'uppercase' },
+  rateOverride: { width: '100px', padding: '6px 8px', borderRadius: '8px', background: 'var(--surface3)', border: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '12px', fontWeight: 700, fontFamily: 'var(--mono)', outline: 'none' },
   iTotal: { width: '120px', textAlign: 'right', fontWeight: 800, fontFamily: 'var(--mono)', fontSize: '16px', color: 'var(--text)' },
   delBtn: { width: '32px', height: '32px', borderRadius: '50%', background: 'var(--red-dim)', color: 'var(--red)', border: 'none', fontSize: '20px', cursor: 'pointer' },
+
+  overrideBadge: { fontSize: '9px', fontWeight: 800, color: 'var(--amber)', background: 'var(--amber-dim)', padding: '2px 6px', borderRadius: '6px', border: '1px solid var(--amber-border)', textTransform: 'uppercase' },
+  rateDateBadge: { fontSize: '9px', fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-dim)', padding: '2px 6px', borderRadius: '6px', border: '1px solid var(--teal-border)' },
+  itemUnit: { fontSize: '11px', fontWeight: 700, color: 'var(--text3)', background: 'var(--glass-highlight)', padding: '2px 8px', borderRadius: '6px' },
+  gstHint: { fontSize: '11px', color: 'var(--text3)', marginTop: '8px', fontWeight: 600 },
 
   summaryItem: { display: 'flex', justifyContent: 'space-between', padding: '20px 0', borderBottom: '1px solid var(--glass-border)', fontSize: '15px', color: 'var(--text2)' },
   footer: { padding: '24px', background: 'var(--glass)', backdropFilter: 'var(--glass-blur)', borderTop: '1px solid var(--glass-border)', position: 'sticky', bottom: 0 },
