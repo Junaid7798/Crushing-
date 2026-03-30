@@ -8,6 +8,10 @@ import PDFPreviewScreen from './screens/PDFPreviewScreen.jsx'
 import InventoryScreen from './screens/InventoryScreen.jsx'
 import RateCardScreen from './screens/RateCardScreen.jsx'
 import PartiesScreen from './screens/PartiesScreen.jsx'
+import AgingScreen from './screens/AgingScreen.jsx'
+import NPAScreen from './screens/NPAScreen.jsx'
+import DeliveryScreen from './screens/DeliveryScreen.jsx'
+import MergeQueueScreen from './screens/MergeQueueScreen.jsx'
 import ReportsScreen from './screens/ReportsScreen.jsx'
 import SettingsScreen from './screens/SettingsScreen.jsx'
 
@@ -46,6 +50,10 @@ export default function App() {
         <Route path="/inventory" element={<InventoryScreen />} />
         <Route path="/ratecard" element={<RateCardScreen />} />
         <Route path="/parties" element={<PartiesScreen />} />
+        <Route path="/aging" element={<AgingScreen />} />
+        <Route path="/npa" element={<NPAScreen />} />
+        <Route path="/delivery" element={<DeliveryScreen />} />
+        <Route path="/merge" element={<MergeQueueScreen />} />
         <Route path="/reports" element={<ReportsScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="*" element={<Navigate to="/" />} />

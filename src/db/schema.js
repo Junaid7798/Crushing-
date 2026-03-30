@@ -84,7 +84,7 @@ export const configSchema = {
 
 // 2. USERS
 export const usersSchema = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -116,6 +116,7 @@ export const usersSchema = {
       }
     },
     assigned_location_id: NULLABLE_UUID,
+    push_status: { type: ['string', 'null'], maxLength: 20 },
     working_hours_start: { type: ['string', 'null'], maxLength: 5 },
     working_hours_end:   { type: ['string', 'null'], maxLength: 5 },
     active:     BOOLEAN_FIELD,
@@ -288,7 +289,7 @@ export const productionRunsSchema = {
 
 // 9. TRANSACTIONS
 export const transactionsSchema = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -310,6 +311,11 @@ export const transactionsSchema = {
     notes:        MEDIUM_STRING,
     reminder_date: NULLABLE_STRING,
     reminder_type: NULLABLE_STRING,
+    npa_status:    { type: ['string', 'null'], maxLength: 20 },
+    npa_declared_at: NULLABLE_STRING,
+    npa_declared_by: NULLABLE_UUID,
+    npa_reason:      MEDIUM_STRING,
+    write_off_amount: NUMBER_FIELD,
     location_id: NULLABLE_UUID,
     business_id: UUID_FIELD,
     ...VARIABLE_FIELDS,
@@ -317,7 +323,7 @@ export const transactionsSchema = {
   },
   required: ['id', 'tx_type', 'party_id', 'date', 'status', 'total', 'business_id'],
   indexes: [
-    'business_id', 'tx_type', 'party_id', 'date', 'status',
+    'business_id', 'tx_type', 'party_id', 'date', 'status', 'npa_status',
     ['party_id', 'status'], ['tx_type', 'date'], ['business_id', 'date'], ['business_id', 'tx_type'],
   ],
 }
@@ -618,4 +624,102 @@ export const rateCardsSchema = {
     'business_id', 'item_id', 'date',
     ['item_id', 'date'], ['business_id', 'date'],
   ],
+}
+
+// 21. DELIVERIES
+export const deliveriesSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id:                UUID_FIELD,
+    transaction_id:    UUID_FIELD,
+    party_id:          UUID_FIELD,
+    driver_id:         NULLABLE_UUID,
+    vehicle_id:        NULLABLE_UUID,
+    vehicle_number:    SHORT_STRING,
+    delivery_address:  MEDIUM_STRING,
+    delivery_lat:      NULLABLE_NUMBER,
+    delivery_lng:      NULLABLE_NUMBER,
+    scheduled_date:    DATE_STRING,
+    scheduled_time:    { type: ['string', 'null'], maxLength: 10 },
+    status:            { type: 'string', maxLength: 20 },
+    proof_photos:      { type: 'array', items: { type: 'string' } },
+    driver_notes:      MEDIUM_STRING,
+    customer_signature: NULLABLE_STRING,
+    distance_km:       NULLABLE_NUMBER,
+    actual_arrival:    NULLABLE_STRING,
+    completed_at:      NULLABLE_STRING,
+    business_id:       UUID_FIELD,
+    ...AUDIT_FIELDS,
+  },
+  required: ['id', 'transaction_id', 'party_id', 'scheduled_date', 'status', 'business_id'],
+  indexes: [
+    'business_id', 'status', 'driver_id', 'party_id', 'scheduled_date',
+    ['business_id', 'status'], ['driver_id', 'status'],
+  ],
+}
+
+// 22. DRIVER LOCATIONS
+export const driverLocationsSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id:          UUID_FIELD,
+    driver_id:   UUID_FIELD,
+    delivery_id: NULLABLE_UUID,
+    lat:         NUMBER_FIELD,
+    lng:         NUMBER_FIELD,
+    accuracy:    NULLABLE_NUMBER,
+    speed:       NULLABLE_NUMBER,
+    battery:     NULLABLE_NUMBER,
+    timestamp:   TIMESTAMP_STRING,
+    business_id: UUID_FIELD,
+  },
+  required: ['id', 'driver_id', 'lat', 'lng', 'timestamp', 'business_id'],
+  indexes: ['business_id', 'driver_id', 'delivery_id', 'timestamp'],
+}
+
+// 23. VEHICLES
+export const vehiclesSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id:              UUID_FIELD,
+    vehicle_number:  SHORT_STRING,
+    vehicle_type:    { type: 'string', maxLength: 30 },
+    capacity_kg:     NUMBER_FIELD,
+    capacity_volume: NUMBER_FIELD,
+    driver_id:       NULLABLE_UUID,
+    active:          BOOLEAN_FIELD,
+    business_id:     UUID_FIELD,
+    ...AUDIT_FIELDS,
+  },
+  required: ['id', 'vehicle_number', 'vehicle_type', 'business_id'],
+  indexes: ['business_id', 'active', 'driver_id'],
+}
+
+// 24. DATA PUSH QUEUE (Manager → Admin)
+export const dataPushSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id:            UUID_FIELD,
+    manager_id:    UUID_FIELD,
+    manager_name:  SHORT_STRING,
+    status:        { type: 'string', maxLength: 20 },
+    record_count:  NUMBER_FIELD,
+    total_value:   NUMBER_FIELD,
+    data_summary:  MEDIUM_STRING,
+    rejected_reason: MEDIUM_STRING,
+    resolved_by:   NULLABLE_UUID,
+    resolved_at:   NULLABLE_STRING,
+    business_id:   UUID_FIELD,
+    created_at:    TIMESTAMP_STRING,
+  },
+  required: ['id', 'manager_id', 'status', 'business_id'],
+  indexes: ['business_id', 'status', 'manager_id', ['business_id', 'status']],
 }

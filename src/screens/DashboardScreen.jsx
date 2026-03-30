@@ -105,6 +105,14 @@ export default function DashboardScreen() {
     { label: 'Expense', icon: '📋', color: 'red', id: 'expense' },
   ].filter(a => !a.hidden), [isPluginEnabled])
 
+  const navItems = useMemo(() => [
+    { label: 'Aging Report', icon: '📅', path: '/aging', color: 'amber' },
+    { label: 'NPA Tracking', icon: '⚠️', path: '/npa', color: 'red' },
+    { label: 'Deliveries', icon: '🚛', path: '/delivery', color: 'teal' },
+    { label: 'Rate Cards', icon: '💰', path: '/ratecard', color: 'purple' },
+    { label: 'Merge Queue', icon: '🔄', path: '/merge', color: 'amber' },
+  ], [])
+
   const navAction = (type) => {
     haptic()
     navigate(`/transaction?type=${type}`)
@@ -157,6 +165,19 @@ export default function DashboardScreen() {
                 onClick={() => navAction(a.id)}>
                 <div style={{ ...s.qaIcon, background: `var(--${a.color}-dim)` }}>{a.icon}</div>
                 <span style={s.qaLabel}>{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Navigation Shortcuts */}
+        <section>
+          <div style={s.sectionHeader}><h2 style={s.sectionTitle}>Management</h2></div>
+          <div style={s.navShortcuts}>
+            {navItems.map(n => (
+              <button key={n.path} style={s.navShortcutBtn} onClick={() => { haptic(); navigate(n.path) }}>
+                <span style={{ fontSize: '18px' }}>{n.icon}</span>
+                <span style={s.nsLabel}>{n.label}</span>
               </button>
             ))}
           </div>
@@ -319,6 +340,14 @@ const s = {
   qaPrimary: { border: '1px solid var(--amber-border)', background: 'var(--amber-dim)' },
   qaIcon: { width: '52px', height: '52px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', transition: 'transform 0.2s' },
   qaLabel: { fontSize: '13px', fontWeight: 700, color: 'var(--text)' },
+
+  navShortcuts: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
+  navShortcutBtn: {
+    background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: '16px',
+    padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '10px',
+    cursor: 'pointer', transition: 'all 0.2s',
+  },
+  nsLabel: { fontSize: '12px', fontWeight: 700, color: 'var(--text)' },
 
   twoCol: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' },
   card: { 

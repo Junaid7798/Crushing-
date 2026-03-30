@@ -26,6 +26,10 @@ import {
   auditLogSchema,
   stockAdjustmentsSchema,
   rateCardsSchema,
+  deliveriesSchema,
+  driverLocationsSchema,
+  vehiclesSchema,
+  dataPushSchema,
 } from './schema.js'
 
 // Guard against double plugin registration in HMR environments
@@ -69,6 +73,10 @@ export async function initDB() {
     audit_log:         { schema: auditLogSchema },
     stock_adjustments: { schema: stockAdjustmentsSchema },
     rate_cards:        { schema: rateCardsSchema },
+    deliveries:        { schema: deliveriesSchema },
+    driver_locations:  { schema: driverLocationsSchema },
+    vehicles:          { schema: vehiclesSchema },
+    data_push:         { schema: dataPushSchema },
   })
 
   return _db
